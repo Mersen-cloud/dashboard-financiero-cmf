@@ -1,0 +1,30 @@
+# Secretos y entorno
+.env
+*.env
+
+# Datos crudos (no se versionan)
+data/raw/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.ipynb_checkpoints/
+
+# Jupyter
+.jupyter/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/

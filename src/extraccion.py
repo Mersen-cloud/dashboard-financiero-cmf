@@ -37,8 +37,25 @@ def _get(endpoint: str, reintentos: int = 3) -> dict:
 
 
 def _a_float(valor: str) -> float | None:
+    """
+    Convierte a float una serie con formato chileno: punto de miles y coma
+    decimal (ej. '40.844,79'). Para estos valores (UF, dólar, euro, UTM) el
+    punto es siempre separador de miles.
+    """
     try:
         return float(str(valor).replace(".", "").replace(",", "."))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _a_float_tasa(valor: str) -> float | None:
+    """
+    Convierte a float las tasas TIP/TMC, cuyo endpoint entrega el valor con
+    PUNTO decimal (ej. '42.82' = 42,82%). No hay separador de miles porque
+    las tasas anuales no superan las tres cifras.
+    """
+    try:
+        return float(str(valor).strip())
     except (ValueError, AttributeError):
         return None
 
@@ -93,7 +110,7 @@ def extraer_tip_tmc(recurso: str, clave: str, anios: list[int]) -> pd.DataFrame:
     df = pd.DataFrame(frames)
     if df.empty:
         return df
-    df["valor"] = df["Valor"].apply(_a_float)
+    df["valor"] = df["Valor"].apply(_a_float_tasa)
     cols = ["fecha", "Titulo", "SubTitulo", "valor"]
     return df[[c for c in cols if c in df.columns]]
 

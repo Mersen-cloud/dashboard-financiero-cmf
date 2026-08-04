@@ -1,10 +1,11 @@
 """
-Módulo de extracción de datos desde la API CMF Bancos.
-Documentación oficial: https://api.cmfchile.cl/
+Extracción de indicadores macroeconómicos desde la API CMF Chile.
+Documentación: https://api.cmfchile.cl
 """
 
 import os
 import json
+import time
 import requests
 import pandas as pd
 from pathlib import Path
@@ -12,87 +13,127 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_KEY = os.getenv("CMF_API_KEY")
+API_KEY  = os.getenv("CMF_API_KEY")
 BASE_URL = "https://api.cmfchile.cl/api-sbifv3/recursos_api"
 
-RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
+RAW_DIR   = Path(__file__).parent.parent / "data" / "raw"
 CLEAN_DIR = Path(__file__).parent.parent / "data" / "clean"
 
 
-def _get(endpoint: str, params: dict | None = None) -> dict:
-    """Llama a la API CMF y devuelve el JSON de respuesta."""
-    url = f"{BASE_URL}/{endpoint}"
-    defaults = {"apikey": API_KEY, "formato": "json"}
-    response = requests.get(url, params={**defaults, **(params or {})}, timeout=30)
-    response.raise_for_status()
-    return response.json()
+def _get(endpoint: str, reintentos: int = 3) -> dict:
+    for intento in range(reintentos):
+        try:
+            r = requests.get(
+                f"{BASE_URL}/{endpoint}",
+                params={"apikey": API_KEY, "formato": "json"},
+                timeout=30,
+            )
+            r.raise_for_status()
+            return r.json()
+        except (requests.ConnectionError, requests.Timeout) as e:
+            if intento == reintentos - 1:
+                raise
+            time.sleep(2 ** intento)  # backoff: 1s, 2s, 4s
 
 
-def extraer_colocaciones(periodo: str) -> pd.DataFrame:
+def _a_float(valor: str) -> float | None:
+    try:
+        return float(str(valor).replace(".", "").replace(",", "."))
+    except (ValueError, AttributeError):
+        return None
+
+
+def extraer_serie_anual(recurso: str, clave: str, anios: list[int]) -> pd.DataFrame:
     """
-    Extrae colocaciones por banco para un período dado.
-
-    periodo: formato AAAAMM, por ejemplo '202312'
+    Descarga una serie histórica anual y la devuelve como DataFrame limpio.
+    recurso: nombre del endpoint (ej. 'uf', 'dolar', 'ipc')
+    clave:   clave JSON de la respuesta (ej. 'UFs', 'Dolares', 'IPCs')
     """
-    data = _get(f"colocaciones/{periodo}")
-    registros = data.get("Colocaciones", [])
-    df = pd.DataFrame(registros)
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
-    ruta_raw = RAW_DIR / f"colocaciones_{periodo}.json"
-    ruta_raw.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    return df
-
-
-def extraer_morosidad(periodo: str) -> pd.DataFrame:
-    """Extrae índices de morosidad por banco para un período dado."""
-    data = _get(f"cartera_vencida/{periodo}")
-    registros = data.get("CartVencida", [])
-    df = pd.DataFrame(registros)
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
-    ruta_raw = RAW_DIR / f"morosidad_{periodo}.json"
-    ruta_raw.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    return df
-
-
-def limpiar_numericos(df: pd.DataFrame, columnas: list[str]) -> pd.DataFrame:
-    """
-    Convierte columnas de texto con formato chileno (puntos de miles, comas decimales)
-    a float. Los valores no convertibles se dejan como NaN y se registran en consola.
-    """
-    for col in columnas:
-        if col not in df.columns:
-            continue
-        original_nulos = df[col].isna().sum()
-        df[col] = (
-            df[col]
-            .astype(str)
-            .str.replace(".", "", regex=False)
-            .str.replace(",", ".", regex=False)
-            .pipe(pd.to_numeric, errors="coerce")
+    frames = []
+    for anio in anios:
+        data = _get(f"{recurso}/{anio}")
+        registros = data.get(clave, [])
+        df = pd.DataFrame(registros)
+        df["anio"] = anio
+        frames.append(df)
+        # Guardar raw
+        RAW_DIR.mkdir(parents=True, exist_ok=True)
+        (RAW_DIR / f"{recurso}_{anio}.json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        nuevos_nulos = df[col].isna().sum() - original_nulos
-        if nuevos_nulos > 0:
-            print(f"  [{col}] {nuevos_nulos} valor(es) no convertibles → NaN")
-    return df
+    resultado = pd.concat(frames, ignore_index=True)
+    resultado["Fecha"] = pd.to_datetime(resultado["Fecha"])
+    resultado["valor"] = resultado["Valor"].apply(_a_float)
+    return resultado[["Fecha", "valor"]].rename(columns={"Fecha": "fecha"})
 
 
-def guardar_clean(df: pd.DataFrame, nombre: str) -> Path:
-    """Guarda el DataFrame limpio en data/clean/ como CSV UTF-8."""
+def extraer_tip_tmc(recurso: str, clave: str, anios: list[int]) -> pd.DataFrame:
+    """
+    Descarga TIP o TMC por mes/año. Devuelve DataFrame con una fila por
+    categoría de operación y período.
+    """
+    frames = []
+    for anio in anios:
+        for mes in range(1, 13):
+            try:
+                data = _get(f"{recurso}/{anio}/{mes:02d}")
+                time.sleep(0.3)
+            except requests.HTTPError:
+                continue
+            registros = data.get(clave, [])
+            RAW_DIR.mkdir(parents=True, exist_ok=True)
+            (RAW_DIR / f"{recurso}_{anio}_{mes:02d}.json").write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            for reg in registros:
+                reg["anio"] = anio
+                reg["mes"]  = mes
+                reg["fecha"] = pd.Timestamp(anio, mes, 1)
+            frames.extend(registros)
+    df = pd.DataFrame(frames)
+    if df.empty:
+        return df
+    df["valor"] = df["Valor"].apply(_a_float)
+    cols = ["fecha", "Titulo", "SubTitulo", "valor"]
+    return df[[c for c in cols if c in df.columns]]
+
+
+def guardar_clean(df: pd.DataFrame, nombre: str) -> None:
     CLEAN_DIR.mkdir(parents=True, exist_ok=True)
     ruta = CLEAN_DIR / f"{nombre}.csv"
     df.to_csv(ruta, index=False, encoding="utf-8-sig")
-    print(f"Guardado: {ruta} ({len(df)} filas)")
-    return ruta
+    print(f"  Guardado: {ruta.name}  ({len(df)} filas)")
 
 
 if __name__ == "__main__":
-    periodo = "202312"
-    print(f"Extrayendo colocaciones para {periodo}...")
-    df_col = extraer_colocaciones(periodo)
-    print(f"  {len(df_col)} registros obtenidos")
-    guardar_clean(df_col, f"colocaciones_{periodo}")
+    ANIOS = list(range(2020, 2027))
 
-    print(f"Extrayendo morosidad para {periodo}...")
-    df_mor = extraer_morosidad(periodo)
-    print(f"  {len(df_mor)} registros obtenidos")
-    guardar_clean(df_mor, f"morosidad_{periodo}")
+    print("Extrayendo UF...")
+    df_uf = extraer_serie_anual("uf", "UFs", ANIOS)
+    guardar_clean(df_uf, "uf")
+
+    print("Extrayendo Dólar...")
+    df_dolar = extraer_serie_anual("dolar", "Dolares", ANIOS)
+    guardar_clean(df_dolar, "dolar")
+
+    print("Extrayendo Euro...")
+    df_euro = extraer_serie_anual("euro", "Euros", ANIOS)
+    guardar_clean(df_euro, "euro")
+
+    print("Extrayendo IPC...")
+    df_ipc = extraer_serie_anual("ipc", "IPCs", ANIOS)
+    guardar_clean(df_ipc, "ipc")
+
+    print("Extrayendo UTM...")
+    df_utm = extraer_serie_anual("utm", "UTMs", ANIOS)
+    guardar_clean(df_utm, "utm")
+
+    print("Extrayendo TIP (tasas de interés promedio)...")
+    df_tip = extraer_tip_tmc("tip", "TIPs", list(range(2020, 2027)))
+    guardar_clean(df_tip, "tip")
+
+    print("Extrayendo TMC (tasas máximas convencionales)...")
+    df_tmc = extraer_tip_tmc("tmc", "TMCs", list(range(2020, 2027)))
+    guardar_clean(df_tmc, "tmc")
+
+    print("\nExtracción completada.")

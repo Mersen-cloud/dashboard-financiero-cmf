@@ -44,6 +44,32 @@ Período cubierto: **enero 2020 – agosto 2026**
 
 ---
 
+## El dashboard
+
+El archivo `dashboard/dashboard.pbix` contiene cuatro páginas interactivas.
+
+### 1 · Resumen ejecutivo
+Indicadores clave de un vistazo (dólar, IPC 12m, UF, TMC) y la evolución del tipo de cambio.
+
+![Resumen ejecutivo](dashboard/pagina1_resumen.png)
+
+### 2 · Inflación
+IPC mensual (con el pico inflacionario de 2022) y la UF, que acumula esa inflación de forma escalonada.
+
+![Inflación](dashboard/pagina2_inflacion.png)
+
+### 3 · Tipo de cambio
+Dólar y euro frente al peso, con máximos, mínimos y depreciación acumulada.
+
+![Tipo de cambio](dashboard/pagina3_tipo_cambio.png)
+
+### 4 · Tasas de interés
+Tasa Máxima Convencional (TMC) por segmento, con segmentador para filtrar por tipo de operación.
+
+![Tasas de interés](dashboard/pagina4_tasas.png)
+
+---
+
 ## Estructura del repositorio
 
 ```
@@ -54,9 +80,13 @@ dashboard-financiero-cmf/
 ├── notebooks/
 │   └── 01_extraccion_cmf.ipynb   # extracción + limpieza documentada
 ├── src/
-│   └── extraccion.py             # módulo reutilizable de extracción
+│   ├── extraccion.py             # módulo reutilizable de extracción
+│   └── calendario.py             # genera la tabla calendario del modelo
 ├── dashboard/
-│   └── dashboard.pbix            # entregable Power BI
+│   ├── dashboard.pbix            # entregable Power BI
+│   ├── medidas_dax.md            # medidas DAX documentadas
+│   ├── guia_dashboard.md         # guía de construcción del dashboard
+│   └── pagina*.png               # capturas de las 4 páginas
 ├── .env.example                  # plantilla de API Key
 ├── requirements.txt
 └── README.md
@@ -102,7 +132,29 @@ Los archivos limpios quedan en `data/clean/` listos para cargar en Power BI.
 
 ## Hallazgos clave
 
-> *Sección por completar con los hallazgos del análisis una vez finalizado el dashboard.*
+1. **El peso se depreció 15,9% frente al dólar** entre enero 2020 y agosto 2026. El
+   dólar se movió en un rango amplio: mínimo de **694** (2021) y máximo de **1.043**
+   (2022), cerrando en **925**.
+
+2. **La inflación tuvo su peak en marzo 2022 con 1,9% mensual.** Sumando los doce
+   meses de 2022, el IPC acumuló **12,2%** en ese año, muy por encima de la meta de
+   3% del Banco Central.
+
+3. **La UF creció 44,3%** en el período (de **28.311** a **40.845**). Como se reajusta
+   por el IPC, su curva ascendente casi continua es el espejo acumulado de la
+   inflación: mientras el IPC mensual sube y baja, la UF solo crece.
+
+4. **La política monetaria se ve en las tasas de crédito.** La TMC de operaciones no
+   reajustables a 90+ días llegó a **43%** en el ciclo de alza 2022–2023 y luego
+   descendió a ~**29%**, siguiendo el mismo patrón que la inflación con cierto rezago.
+
+5. **El euro se apreció más que el dólar frente al peso**, alcanzando un máximo de
+   **1.139** y cerrando en **1.065**, consistentemente por encima del dólar en todo
+   el período.
+
+> *Nota de calidad de datos:* la serie TIP incluye un valor atípico de 300% en junio
+> 2025 para un tramo de microcrédito específico; se conserva tal como lo entrega la
+> API para no alterar la fuente oficial.
 
 ---
 

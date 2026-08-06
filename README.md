@@ -149,8 +149,10 @@ Los archivos limpios quedan en `data/clean/` listos para cargar en Power BI.
    descendió a ~**29%**, siguiendo el mismo patrón que la inflación con cierto rezago.
 
 5. **El euro se apreció más que el dólar frente al peso**, alcanzando un máximo de
-   **1.139** y cerrando en **1.065**, consistentemente por encima del dólar en todo
-   el período.
+   **1.139** y cerrando en **1.065**. Se mantuvo por encima del dólar casi todo el
+   período, con una excepción notable: entre fines de agosto y comienzos de noviembre
+   de 2022, el episodio global de paridad euro-dólar hizo que el euro cotizara por
+   debajo del dólar también en Chile.
 
 > *Nota de calidad de datos:* la serie TIP incluye un valor atípico de 300% en junio
 > 2025 para un tramo de microcrédito específico; se conserva tal como lo entrega la
